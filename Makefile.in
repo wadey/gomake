@@ -1,0 +1,99 @@
+# Generic Makefile for Go services
+# See README.md for more details and usage
+
+NAME ?= $(notdir $(shell go list .))
+
+GO ?= $(firstword $(subst :, ,$(GOPATH)))
+
+# the main binary is built from the root pkg
+MAIN ?= $(shell [ $(shell go list -f '{{.Name}}') = 'main' ] && echo "bin/$(NAME)")
+
+# Any targets that should be built before the binaries are built
+PREBUILD ?=
+
+# generate `bin/<name>` for each folder in `cmd/<name>`
+CMDS=$(subst cmd/,bin/,$(shell test -d cmd && find cmd -depth 2 -name '*.go' | xargs -n1 dirname | sort -u))
+
+all: $(MAIN) $(CMDS)
+
+# build the main binary from the root package
+$(MAIN): $(PREBUILD) .FORCE
+	go build -o $@
+
+# build non-main binaries from cmd/<name> packages
+bin/%: $(PREBUILD) .FORCE
+	go build -o $@ cmd/$*/*.go
+
+clean:
+	rm -f $(MAIN) $(CMDS)
+
+test:
+	go test ./...
+
+run:
+	go run *.go
+
+dev:
+	go get github.com/wadey/rerun
+	$(GO)/bin/rerun $(shell go list)
+
+##
+## Coverage
+##
+
+# List of pkgs for the project
+ROOTPKG=$(shell go list .)
+PKGS=$(shell go list ./...)
+
+SPACE:=
+SPACE+=
+COMMA=,
+
+GOCOV=$(GO)/bin/gocov
+GOCOVXML=$(GO)/bin/gocov-xml
+GOCOVMERGE=$(GO)/bin/gocovmerge
+
+# Coverage output: coverage/$PKG/coverage.out
+COVPKGS=$(addsuffix /coverage.out,$(addprefix coverage/,$(PKGS)))
+
+cover:
+	go test -cover ./...
+
+cover-html: coverage/all.out
+	go tool cover -html=$^
+
+cover-func: coverage/all.out
+	go tool cover -func=$^
+
+cover-xml: coverage/cov.xml
+
+coverage/cov.xml: coverage/all.out $(GOCOV) $(GOCOVXML)
+	$(GOCOV) convert $< | $(GOCOVXML) >$@
+
+coverage/cov.html: coverage/all.out $(GOCOV) $(GOCOVHTML)
+	$(GOCOV) convert $< | $(GOCOVHTML) >$@
+
+coverage/all.out: $(COVPKGS) $(GOCOVMERGE)
+	$(GOCOVMERGE) $(wildcard $(COVPKGS)) >$@
+
+$(COVPKGS): .FORCE
+	@ mkdir -p $(dir $@)
+	$(eval PKG=$(patsubst coverage/%/coverage.out,%,$@))
+	$(eval PKGDEPS=$(shell go list -f '{{join .Deps "\n"}}' $(PKG) | grep $(ROOTPKG)))
+	$(eval JOINEDPKGDEPS=$(subst $(SPACE),$(COMMA),$(PKGDEPS)))
+	go test -v -coverprofile $@ -coverpkg $(PKG),$(JOINEDPKGDEPS) $(PKG)
+
+$(GOCOV):
+	go get github.com/axw/gocov/gocov
+
+$(GOCOVXML):
+	go get github.com/t-yuki/gocov-xml
+
+$(GOCOVHTML):
+	go get github.com/matm/gocov-html
+
+$(GOCOVMERGE):
+	go get github.com/wadey/gocovmerge
+
+.FORCE:
+.PHONY: all clean test dev cover cover-html cover-func cover-xml
