@@ -1,12 +1,12 @@
 # Generic Makefile for Go services
 # See README.md for more details and usage
 
-NAME ?= $(notdir $(shell go list .))
+NAME ?= $(notdir $(shell test -n "$(wildcard *.go)" && go list || echo $(PWD)))
 
 GO ?= $(firstword $(subst :, ,$(GOPATH)))
 
 # the main binary is built from the root pkg
-MAIN ?= $(shell [ $(shell go list -f '{{.Name}}') = 'main' ] && echo "bin/$(NAME)")
+MAIN ?= $(shell [ "$(shell test -n "$(wildcard *.go)" && go list -f '{{.Name}}')" = 'main' ] && echo "bin/$(NAME)")
 
 # Any targets that should be built before the binaries are built
 PREBUILD ?=
